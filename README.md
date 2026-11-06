@@ -6,6 +6,7 @@
 
 *What should an LLM agent remember when the key clue appears once, and only matters 20 steps later?*
 
+[![Demo](https://img.shields.io/badge/▶_Interactive_demo-live-2f6fde)](https://cyrchanh.github.io/open-endedness-project/)
 [![Paper](https://img.shields.io/badge/📄_Paper-PDF-b31b1b)](Group5_OEGI_paper.pdf)
 ![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)
 ![LLMs](https://img.shields.io/badge/LLMs-GPT--4o--mini_·_Gemini_2.5_·_DeepSeek-412991)
@@ -30,6 +31,12 @@ We took **[FadeMem](https://arxiv.org/abs/2601.18642)**, a decay-based memory ar
 | 💤 | **Dormant reactivation** | Weak facts leave the prompt but aren't deleted. When the current observation is similar enough, they come back | Silent engrams (Josselyn & Tonegawa, 2020) |
 
 We then ran a full benchmark: **6 memory conditions × 3 environments × 3 LLM backbones × 30 seeded episodes per cell**, reported with Wilson 95% confidence intervals.
+
+## ▶ Interactive demo
+
+**[cyrchanh.github.io/open-endedness-project](https://cyrchanh.github.io/open-endedness-project/)**: step through the same seeded episode under both memory designs, watch a shielded fact survive, and compare results across models. No install or API keys needed.
+
+<a href="https://cyrchanh.github.io/open-endedness-project/"><img src="docs/preview.png" alt="Demo: side-by-side replay. With Fade memory the key fact stays active and the agent succeeds in 18 steps; with a FIFO buffer the key fact is pushed out at step 53 and the agent fails" width="100%"></a>
 
 ## 🏗️ Architecture
 
@@ -103,6 +110,7 @@ A modular, config-driven experiment harness for running LLM agents in text envir
 ├── coin_collector_exp/        # Parallel multi-provider batch runner for CoinCollector
 ├── postprocess_rollouts.py    # Metrics: success rate, Wilson CIs, loop rate, blocked-forward rate
 ├── config/                    # OmegaConf YAMLs for every experiment
+├── docs/                      # Interactive demo (GitHub Pages)
 └── Group5_OEGI_paper.pdf      # Full paper
 ```
 

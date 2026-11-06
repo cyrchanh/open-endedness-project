@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adaptive Agent Memory</title>
+<meta name="description" content="Interactive demo: how predictive shielding keeps an LLM agent from forgetting the key it picked up 50 steps ago.">
+<style>
+:root{
+  --bg:#f7f7f5; --panel:#ffffff; --ink:#1d1d1f; --muted:#6b6b70; --line:#e3e3e0;
+  --blue:#2f6fde; --blue-soft:#e6efff; --amber:#c27a12; --amber-soft:#fff3dc;
+  --green:#1f8a4c; --green-soft:#e2f5ea; --red:#c93a3a; --red-soft:#fde8e8;
+  --grey-bar:#c9c9cf; --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 16px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121214; --panel:#1b1b1f; --ink:#ececf0; --muted:#9a9aa3; --line:#2c2c33;
+    --blue:#6c9cff; --blue-soft:#1d2a45; --amber:#f0b04a; --amber-soft:#3a2c12;
+    --green:#4cc285; --green-soft:#16301f; --red:#f07272; --red-soft:#3a1a1a;
+    --grey-bar:#4a4a54; --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121214; --panel:#1b1b1f; --ink:#ececf0; --muted:#9a9aa3; --line:#2c2c33;
+  --blue:#6c9cff; --blue-soft:#1d2a45; --amber:#f0b04a; --amber-soft:#3a2c12;
+  --green:#4cc285; --green-soft:#16301f; --red:#f07272; --red-soft:#3a1a1a;
+  --grey-bar:#4a4a54; --shadow:none;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+header{padding:56px 0 28px}
+.eyebrow{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+h1{font-size:clamp(28px,5vw,44px);line-height:1.12;margin:10px 0 14px;letter-spacing:-.02em}
+h2{font-size:24px;margin:0 0 6px;letter-spacing:-.01em}
+.lede{font-size:18px;color:var(--muted);max-width:720px;margin:0}
+.links{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--ink);text-decoration:none;font-size:14px;font-weight:500;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+section{padding:36px 0}
+.sub{color:var(--muted);margin:0 0 20px;max-width:760px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+
+/* replay */
+.controls{display:flex;align-items:center;gap:14px;padding:16px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.track{flex:1;min-width:200px}
+.track input[type=range]{width:100%;margin:0;accent-color:var(--blue)}
+.stepnum{font-variant-numeric:tabular-nums;font-weight:600;min-width:84px}
+.marks{position:relative;height:40px;margin:0 8px}
+.mark:last-child{transform:translateX(-100%)}.mark:last-child::before{margin-right:0}
+.mark{position:absolute;top:2px;transform:translateX(-50%);font-size:11px;color:var(--muted);white-space:nowrap;cursor:pointer}
+.mark::before{content:"";display:block;width:2px;height:8px;background:var(--muted);margin:0 auto 2px;border-radius:1px}
+.mark.low{top:18px}.mark.low::before{height:24px;margin-top:-16px}
+.mark.key::before{background:var(--amber)} .mark.bad::before{background:var(--red)}
+.panes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0}
+.pane{padding:18px;min-width:0}
+.pane+.pane{border-left:1px solid var(--line)}
+.pane h3{margin:0;font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--blue-soft);color:var(--blue)}
+.tag.fifo{background:var(--line);color:var(--muted)}
+.now{margin:12px 0;padding:10px 12px;border-radius:10px;background:var(--bg);font-size:14px;min-height:64px}
+.now .room{font-weight:600}
+.now code{overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;background:var(--panel);border:1px solid var(--line);padding:1px 6px;border-radius:6px}
+.event{font-size:13px;color:var(--muted);margin-top:4px;min-height:20px}
+.event.hot{color:var(--amber);font-weight:600}
+.event.bad{color:var(--red);font-weight:600}
+.event.good{color:var(--green);font-weight:600}
+.memhead{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.facts{display:flex;flex-direction:column;gap:5px;min-height:120px}
+.fact{display:grid;grid-template-columns:30px minmax(0,1fr) 54px;align-items:center;gap:8px;font-size:13px;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);transition:background .2s}
+.fact .id{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted);font-size:12px}
+.fact .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fact .bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.fact .bar i{display:block;height:100%;background:var(--blue)}
+.fact.key{border-color:var(--amber);background:var(--amber-soft)}
+.fact.key .bar i{background:var(--amber)}
+.fact.gone{opacity:.45;text-decoration:line-through}
+.more{font-size:12px;color:var(--muted);padding:2px 8px}
+.slots{display:grid;grid-template-columns:repeat(16,1fr);gap:3px;margin-top:8px}
+.slot{height:10px;border-radius:2px;background:var(--line)}
+.slot.on{background:var(--grey-bar)} .slot.k{background:var(--amber)}
+.outcome{margin-top:14px;padding:10px 12px;border-radius:10px;font-weight:600;font-size:14px;display:none}
+.outcome.win{display:block;background:var(--green-soft);color:var(--green)}
+.outcome.lose{display:block;background:var(--red-soft);color:var(--red)}
+.foot{font-size:12px;color:var(--muted);padding:12px 18px;border-top:1px solid var(--line)}
+
+/* chart */
+.chartcard{padding:18px}
+svg text{fill:var(--muted);font-size:11px;font-family:inherit}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}
+.legend span::before{content:"";display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle;background:var(--c)}
+.legend span.dash::before{background:repeating-linear-gradient(90deg,var(--c) 0 4px,transparent 4px 7px)}
+
+/* results */
+.seg{display:inline-flex;max-width:100%;border:1px solid var(--line);border-radius:999px;padding:3px;background:var(--panel);margin-bottom:16px}
+.seg button{border:0;background:none;color:var(--muted);font:inherit;font-size:14px;padding:6px 14px;border-radius:999px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.lvl{padding:14px}
+.lvl h4{margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:600}
+.row{display:grid;grid-template-columns:96px minmax(0,1fr) 36px;gap:8px;align-items:center;font-size:12px;margin:5px 0}
+.row .b{height:10px;border-radius:3px;background:var(--line);overflow:hidden}
+.row .b i{display:block;height:100%;background:var(--grey-bar);transition:width .35s}
+.row.fade .b i{background:var(--blue)} .row.fade{font-weight:600}
+.row .v{text-align:right;font-variant-numeric:tabular-nums}
+.conds{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:22px}
+.cond{padding:16px}
+.cond .n{font-size:12px;color:var(--blue);font-weight:700}
+.cond h4{margin:4px 0 6px;font-size:15px}
+.cond p{margin:0;font-size:13px;color:var(--muted)}
+footer{padding:28px 0 56px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);margin-top:20px}
+footer a{color:inherit}
+.themebtn{position:fixed;top:14px;right:14px}
+
+@media (max-width:820px){
+  .panes{grid-template-columns:minmax(0,1fr)}
+  .pane+.pane{border-left:0;border-top:1px solid var(--line)}
+  .grid4,.conds{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:480px){
+  .grid4,.conds{grid-template-columns:minmax(0,1fr)}
+  .marks .mark span{display:none}
+  .seg{display:flex;flex-wrap:wrap;border-radius:14px}
+  .stepnum{min-width:0}
+  .track{min-width:0;flex-basis:100%;order:3}
+}
+</style>
+</head>
+<body>
+<button class="btn themebtn" id="theme" aria-label="Toggle colour theme">◐</button>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">UCL MSc ML · Group research project · Distinction</div>
+  <h1>Your agent picked up a key 50 steps ago.<br>Does it still remember?</h1>
+  <p class="lede">LLM agents in text games see a key once and need it much later. We extended the FadeMem memory architecture with <b>fact compression</b>, <b>predictive shielding</b> and <b>dormant reactivation</b>, then tested it across 6 memory designs × 3 LLMs. This page replays what the paper found.</p>
+  <div class="links">
+    <a class="btn primary" href="#replay">▶ Watch the replay</a>
+    <a class="btn" href="https://github.com/cyrchanh/open-endedness-project">GitHub repo</a>
+    <a class="btn" href="https://github.com/cyrchanh/open-endedness-project/blob/main/Group5_OEGI_paper.pdf">Paper (PDF)</a>
+  </div>
+</header>
+
+<!-- 1. Replay -->
+<section id="replay">
+  <h2>1 · Same seed, two memories</h2>
+  <p class="sub">TextWorld TreasureHunter, very hard (L30), Gemini 2.5 Flash Lite, seed 1. Both agents see the same map and pick up the key at step 7. Then one of them takes a wrong turn.</p>
+  <div class="card">
+    <div class="controls">
+      <button class="btn" id="play" aria-label="Play">▶ Play</button>
+      <div class="track">
+        <input type="range" id="step" min="0" max="80" value="0" aria-label="Step">
+        <div class="marks" id="marks"></div>
+      </div>
+      <span class="stepnum" id="stepnum">Step 0 / 80</span>
+    </div>
+    <div class="panes">
+      <div class="pane">
+        <h3>Fade-Enriched History <span class="tag">ours · shielded memory</span></h3>
+        <div class="now" id="fNow"></div>
+        <div class="memhead"><span>Active facts</span><span>strength v</span></div>
+        <div class="facts" id="fFacts"></div>
+        <div class="outcome" id="fOut"></div>
+      </div>
+      <div class="pane">
+        <h3>Enriched History <span class="tag fifo">baseline · FIFO buffer</span></h3>
+        <div class="now" id="eNow"></div>
+        <div class="memhead"><span>Buffer (newest first)</span><span id="eCount">0 / 16</span></div>
+        <div class="facts" id="eFacts"></div>
+        <div class="slots" id="eSlots" aria-hidden="true"></div>
+        <div class="outcome" id="eOut"></div>
+      </div>
+    </div>
+    <div class="foot">Reconstructed from the paper's Tables 15–16 to illustrate the mechanism. Room-by-room detail during the loop is simplified.</div>
+  </div>
+</section>
+
+<!-- 2. Strength chart -->
+<section id="shield">
+  <h2>2 · Predictive shielding in action</h2>
+  <p class="sub">When the agent picks up a key, a rule tags the fact with a trigger: <code>locked.*(chest|door)</code>. The fact still fades while the agent explores ten empty rooms. When a locked chest appears, the trigger fires and the fact gets a +0.2 boost, so it stays in the prompt exactly when it's needed.</p>
+  <div class="card chartcard">
+    <svg id="chart" viewBox="0 0 720 300" width="100%" role="img" aria-label="Strength of the key fact over steps 2 to 27"></svg>
+    <div class="legend">
+      <span style="--c:var(--amber)">"Picked up type 3 latchkey" (actual trace, Table 20)</span>
+      <span class="dash" style="--c:var(--muted)">Without the trigger boost (extrapolated)</span>
+      <span class="dash" style="--c:var(--red)">Active → dormant threshold (0.15)</span>
+    </div>
+  </div>
+</section>
+
+<!-- 3. Results -->
+<section id="results">
+  <h2>3 · When does adaptive memory pay off?</h2>
+  <p class="sub">Success rate on TreasureHunter across difficulty levels, 30 seeded episodes per bar. Switch models to see the main finding: it depends on the backbone.</p>
+  <div class="seg" role="group" aria-label="Backbone">
+    <button data-m="GEM" aria-pressed="true">Gemini 2.5 Flash Lite</button>
+    <button data-m="GPT" aria-pressed="false">GPT-4o-mini</button>
+    <button data-m="DS" aria-pressed="false">DeepSeek Chat</button>
+  </div>
+  <div class="grid4" id="levels"></div>
+  <p class="sub" id="note" style="margin-top:14px"></p>
+
+  <div class="conds">
+    <div class="card cond"><div class="n">CONDITION 1</div><h4>Long enough episodes</h4><p>Easy levels finish in 4–8 steps, before the 12-step tagging cycle even runs.</p></div>
+    <div class="card cond"><div class="n">CONDITION 2</div><h4>Info acquired long before use</h4><p>On CoinCollector (no key/lock dependencies) shields never fire and there is no gain.</p></div>
+    <div class="card cond"><div class="n">CONDITION 3</div><h4>A "sweet-spot" backbone</h4><p>Too weak: it misjudges its own facts and erases them. Too strong: raw history is enough.</p></div>
+    <div class="card cond"><div class="n">CONDITION 4</div><h4>Basic task competence</h4><p>On BabyAI, 60–100% loop rates show the bottleneck is spatial reasoning, not memory.</p></div>
+  </div>
+</section>
+
+<footer>
+  Fact Compression, Predictive Shielding, and Dormant Reactivation: Adaptive Memory for Sparse Embodied LLM Agents · UCL Group 5 ·
+  <a href="https://github.com/cyrchanh/open-endedness-project">Source &amp; paper</a>
+</footer>
+</div>
+
+<script>
+(() => {
+/* ---------- theme ---------- */
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark'
+    : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  drawChart();
+};
+
+/* ---------- replay data ---------- */
+const MAX = 80;
+const fadeSteps = [
+ ['Laundromat','take American latchkey',''],
+ ['Laundromat','unlock American gate',''],
+ ['Laundromat','open American gate','F1 created · 🛡 shield set (trigger: locked gate/door)'],
+ ['Cubicle','go west',''],
+ ['Bedchamber','go west',''],
+ ['Bedchamber','go north','F2 created'],
+ ['Spare Room','go north',''],
+ ['Lounge','take TextWorld key','F3 "Retrieved TextWorld key" · 🛡 shield set (trigger: locked gate/chest)'],
+ ['Lounge','go east',''],
+ ['Shower','go south',''],
+ ['Studio','go west','Trigger fired on F3 · strength boosted to 1.00'],
+ ['Spare Room','go south',''],
+ ['Bedchamber','go east',''],
+ ['Cubicle','go east',''],
+ ['Laundromat','unlock TextWorld gate','F3 is in the prompt, so the agent uses the key'],
+ ['Laundromat','open TextWorld gate',''],
+ ['Laundromat','go east',''],
+ ['Workshop','take key','Mission complete ✓'],
+];
+const F3v = {7:.98,8:.97,9:.96,10:1,11:.98,12:.97,13:.95,14:.93,15:.92,16:.91,17:.90};
+function fadeFacts(t){
+  const s = Math.min(t,17), out=[];
+  if (s>=2) out.push({id:'F1',txt:'American gate opened',v:Math.max(.55,1-.02*(s-2)),shield:true});
+  if (s>=5) out.push({id:'F2',txt:'Navigated west via Cubicle to Bedchamber',v:Math.max(.2,1-.07*(s-5))});
+  if (s>=7) out.push({id:'F3',txt:'Retrieved TextWorld key from Lounge',v:F3v[s],key:true,shield:s<10});
+  if (s>=10) out.push({id:'F4',txt:'Moved Lounge → Shower → Studio',v:Math.max(.3,1-.06*(s-10))});
+  if (s>=13) out.push({id:'F5',txt:'Heading east back toward Laundromat',v:1-.06*(s-13)});
+  return out.sort((a,b)=>b.v-a.v);
+}
+
+// FIFO baseline
+const loopRooms = ['Bathroom','Basement'];
+function eRoom(t){
+  const fixed = ['Laundromat','Laundromat','Laundromat','Cubicle','Bedchamber','Bedchamber','Spare Room','Lounge','Lounge','Shower','Studio','Spare Room','Shower','Shower','Basement'];
+  if (t < fixed.length) return fixed[t];
+  if (t <= 53) return loopRooms[t%2];
+  if (t === 54) return 'Studio';
+  if (t === 55) return 'Laundromat';
+  return ['Workshop','Laundromat','Cubicle','Bedchamber','Spare Room','Lounge','Shower','Studio'][t%8];
+}
+function eAction(t){
+  if (t <= 10) return fadeSteps[t][1];
+  if (t === 11) return 'go east  ← wrong turn';
+  if (t <= 14) return t===14 ? 'go down' : 'go east';
+  if (t <= 53) return t%2 ? 'go north' : 'go south';
+  if (t === 54) return 'go west';
+  if (t === 55) return 'look  (sees the locked TextWorld gate)';
+  return ['go west','examine table','go north','go east','go south','open box'][t%6];
+}
+// facts: F1@2, F2@5, F3@7, then nav facts until F19@53 pushes F3 out
+const loopText = ['Went east from Spare Room into Shower','Detour: Shower → Basement','Moved Bathroom ↔ Basement','Basement exits: north, south','Back in Bathroom from Basement','Bathroom ↔ Basement again','No new items in Basement','Returned to Bathroom'];
+const eFactSteps = [[2,'American gate opened'],[5,'Navigated west via Cubicle to Bedchamber'],[7,'Retrieved TextWorld key from Lounge']];
+const navSteps = [11,14,17,20,23,26,29,32,35,38,41,44,47,49,51,53,56,59,62,65,68,71,74,77,80];
+navSteps.forEach((s,i)=>eFactSteps.push([s, loopText[i%loopText.length]]));
+function eFacts(t){
+  const all = eFactSteps.filter(f=>f[0]<=t).map((f,i)=>({id:'F'+(i+1),txt:f[1],key:i===2}));
+  return {buf: all.slice(-16).reverse(), dropped: all.slice(0, Math.max(0,all.length-16))};
+}
+function eEvent(t){
+  const m = {2:'F1 added',5:'F2 added',7:'F3 "Retrieved TextWorld key" added',11:'Wrong turn: a 40-step Bathroom ↔ Basement loop begins',
+    15:'Each loop adds another navigation fact',49:'Buffer full: F1 pushed out',51:'F2 pushed out',
+    53:'F3 "Retrieved TextWorld key" pushed out of the buffer',55:'At the gate, but the key fact is gone',80:'Step budget exhausted ✗'};
+  return m[t] || (t>55 && t<80 ? 'Exploring without recalling the key…' : '');
+}
+
+/* ---------- render replay ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function factRow(f, showBar){
+  return `<div class="fact${f.key?' key':''}"><span class="id">${f.id}</span>`+
+    `<span class="txt" title="${esc(f.txt)}">${f.shield?'🛡 ':''}${esc(f.txt)}</span>`+
+    (showBar?`<span class="bar" title="v = ${f.v.toFixed(2)}"><i style="width:${(f.v*100).toFixed(0)}%"></i></span>`:'<span></span>')+`</div>`;
+}
+function render(t){
+  $('step').value = t; $('stepnum').textContent = `Step ${t} / ${MAX}`;
+  // fade
+  const fs = Math.min(t,17), fstep = fadeSteps[fs];
+  const fEv = t>17 ? 'Finished: no further steps' : fstep[2];
+  $('fNow').innerHTML = `<div><span class="room">${fstep[0]}</span> · <code>${esc(fstep[1])}</code></div>`+
+    `<div class="event ${/Trigger|shield/.test(fEv)?'hot':/complete|uses the key/.test(fEv)?'good':''}">${esc(fEv||'')}</div>`;
+  $('fFacts').innerHTML = fadeFacts(t).map(f=>factRow(f,true)).join('');
+  const fo = $('fOut'); fo.className = 'outcome'+(t>=17?' win':''); fo.textContent = t>=17?'✓ Success in 18 steps: the shield kept the key fact active':'';
+  // fifo
+  const ev = eEvent(t);
+  $('eNow').innerHTML = `<div><span class="room">${eRoom(t)}</span> · <code>${esc(eAction(t))}</code></div>`+
+    `<div class="event ${/pushed out|gone|exhausted|Wrong/.test(ev)?'bad':/F3/.test(ev)?'hot':''}">${esc(ev)}</div>`;
+  const {buf, dropped} = eFacts(t);
+  const show = buf.slice(0,5);
+  const keyIn = buf.find(f=>f.key);
+  if (keyIn && !show.includes(keyIn)) show.push(keyIn);
+  let html = show.map((f,i)=> (keyIn===f && i===show.length-1 && buf.indexOf(f)>4 ? `<div class="more">… ${buf.indexOf(f)-5} more navigation facts …</div>`:'') + factRow(f,false)).join('');
+  if (!keyIn && buf.length>5) html += `<div class="more">… ${buf.length-5} more navigation facts</div>`;
+  const droppedKey = dropped.find(f=>f.key);
+  if (droppedKey) html += `<div class="fact key gone"><span class="id">F3</span><span class="txt">Retrieved TextWorld key from Lounge</span><span></span></div>`;
+  $('eFacts').innerHTML = html;
+  $('eCount').textContent = `${buf.length} / 16`;
+  $('eSlots').innerHTML = Array.from({length:16},(_,i)=>{
+    const f = buf[buf.length-1-i]; return `<div class="slot${f?(f.key?' k':' on'):''}"></div>`;}).join('');
+  const eo = $('eOut'); eo.className = 'outcome'+(t>=80?' lose':''); eo.textContent = t>=80?'✗ Failed at the 80-step limit: the key fact was pushed out at step 53':'';
+}
+
+// timeline marks
+const marks = [[7,'key found','key'],[11,'wrong turn','bad low'],[17,'Fade wins',''],[53,'key fact lost','bad'],[80,'FIFO fails','bad low']];
+$('marks').innerHTML = marks.map(([s,l,c])=>`<span class="mark ${c}" data-s="${s}" style="left:calc(${s/MAX*100}% )"><span>${l}</span></span>`).join('');
+$('marks').querySelectorAll('.mark').forEach(m=>m.onclick=()=>{stop();render(+m.dataset.s);});
+
+let timer=null;
+function stop(){clearInterval(timer);timer=null;$('play').textContent='▶ Play';}
+$('play').onclick = () => {
+  if (timer) return stop();
+  let t = +$('step').value; if (t>=MAX) t=0;
+  $('play').textContent='❚❚ Pause';
+  timer = setInterval(()=>{ render(t); if (t>=MAX) stop(); t += (t>=18 && t<50) ? 2 : 1; }, 260);
+};
+$('step').oninput = e => { stop(); render(+e.target.value); };
+const startAt = Math.max(0, Math.min(MAX, parseInt(new URLSearchParams(location.search).get('t'), 10) || 0));
+render(startAt);
+
+/* ---------- chart ---------- */
+const actual = [[2,.967],[3,.952],[4,.941],[5,.870],[6,.801],[7,.737],[8,.678],[9,.624],[10,.574],[11,.528],[12,.486],[13,.447],[14,.411],[15,.378],[16,.348],[17,.320],[18,.294],[19,.271],[20,.471],[21,.460],[22,.449],[23,.438]];
+const extra = [[19,.271]]; for (let s=20,v=.271; s<=27; s++){ v*=.92; extra.push([s,+v.toFixed(3)]); }
+function drawChart(){
+  const css = getComputedStyle(root), c = n => css.getPropertyValue(n).trim();
+  const W=720,H=300,L=44,R=16,T=16,B=36, x=s=>L+(s-2)/(27-2)*(W-L-R), y=v=>T+(1-v)*(H-T-B);
+  const path = pts => pts.map((p,i)=>(i?'L':'M')+x(p[0]).toFixed(1)+','+y(p[1]).toFixed(1)).join('');
+  let g = '';
+  for (let v=0; v<=1.001; v+=.25) g += `<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="${c('--line')}"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end">${v.toFixed(2)}</text>`;
+  for (let s=2; s<=27; s+=5) g += `<text x="${x(s)}" y="${H-12}" text-anchor="middle">step ${s}</text>`;
+  g += `<rect x="${x(2)}" y="${y(.15)}" width="${x(27)-x(2)}" height="${y(0)-y(.15)}" fill="${c('--red-soft')}" opacity=".7"/>`;
+  g += `<line x1="${L}" x2="${W-R}" y1="${y(.15)}" y2="${y(.15)}" stroke="${c('--red')}" stroke-dasharray="5 4"/>`;
+  g += `<text x="${W-R-4}" y="${y(.15)+14}" text-anchor="end" style="fill:${c('--red')}">dormant: removed from prompt</text>`;
+  g += `<path d="${path(extra)}" fill="none" stroke="${c('--muted')}" stroke-width="2" stroke-dasharray="5 4"/>`;
+  g += `<path d="${path(actual)}" fill="none" stroke="${c('--amber')}" stroke-width="2.5" stroke-linejoin="round"/>`;
+  actual.forEach(p=> g += `<circle cx="${x(p[0])}" cy="${y(p[1])}" r="2.6" fill="${c('--amber')}"/>`);
+  g += `<line x1="${x(20)}" x2="${x(20)}" y1="${y(.271)}" y2="${y(.471)}" stroke="${c('--green')}" stroke-width="2"/>`;
+  g += `<text x="${x(20)-8}" y="${y(.56)}" text-anchor="end" style="fill:${c('--green')};font-weight:600">trigger fired: "locked type 3 chest" (+0.2)</text>`;
+  g += `<text x="${x(21)+6}" y="${y(.471)+18}" style="fill:${c('--ink')}">step 21: unlocks the chest</text>`;
+  g += `<text x="${x(2)+6}" y="${y(.967)-6}" style="fill:${c('--ink')}">step 2: key picked up, shield set</text>`;
+  g += `<text x="${W-R}" y="${y(.31)}" text-anchor="end">without boost: dormant by ~step 27</text>`;
+  $('chart').innerHTML = g;
+}
+drawChart();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawChart);
+
+/* ---------- results ---------- */
+const conds = ['Baseline','Reflection','Enriched','Trajectory','Enriched Hist.','Fade (ours)'];
+const R = { // Table 6: L10, L15, L20, L30 per condition
+  DS: [[43,27,37,33],[57,27,33,30],[83,83,67,50],[97,100,97,97],[97,100,97,93],[100,100,97,87]],
+  GEM:[[30,10,23,20],[40,23,27,27],[73,63,67,33],[83,93,87,77],[87,93,93,77],[90,97,97,83]],
+  GPT:[[23,17,17,17],[27,13,23,20],[57,57,30,23],[87,93,67,47],[80,100,63,43],[93,93,70,37]],
+};
+const notes = {
+  GEM:'Gemini sits in the sweet spot: Fade is best or tied at every level, and clearest on the hardest one (83% vs 77% for the FIFO buffer).',
+  GPT:'GPT-4o-mini gains on L10 and L20 but drops on L30 (37% vs 43%). It often marks compatible facts as contradictory, and that erases good memories.',
+  DS:'DeepSeek is strong enough that raw trajectory history alone reaches 97% on L30; the extra compression costs it a little (87%).',
+};
+const lvls = ['Easy · L10','Medium · L15','Hard · L20','Very hard · L30'];
+function renderResults(m){
+  $('levels').innerHTML = lvls.map((name,li)=>`<div class="card lvl"><h4>${name}</h4>`+
+    conds.map((cn,ci)=>`<div class="row${ci===5?' fade':''}"><span>${cn}</span><span class="b"><i style="width:${R[m][ci][li]}%"></i></span><span class="v">${R[m][ci][li]}%</span></div>`).join('')+`</div>`).join('');
+  $('note').textContent = notes[m];
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.m===m));
+}
+document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>renderResults(b.dataset.m));
+renderResults('GEM');
+})();
+</script>
+</body>
+</html>
